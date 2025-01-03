@@ -29,9 +29,7 @@ func init() {
 		Scope:               nuke.Account,
 		Resource:            &NetworkFirewall{},
 		Lister:              &NetworkFirewallLister{},
-		DependsOn:           []string{},
 		AlternativeResource: "AWS::NetworkFirewall::Firewall",
-		Settings:            []string{},
 	})
 }
 
