@@ -8,9 +8,11 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.28.7
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.48
 	github.com/aws/aws-sdk-go-v2/service/appstream v1.42.0
+	github.com/aws/aws-sdk-go-v2/service/kafka v1.38.9
 	github.com/aws/aws-sdk-go-v2/service/networkfirewall v1.44.7
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.71.1
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.3
+	github.com/aws/aws-sdk-go-v2/service/wafregional v1.25.8
 	github.com/aws/smithy-go v1.22.1
 	github.com/ekristen/libnuke v0.24.0
 	github.com/fatih/color v1.18.0
