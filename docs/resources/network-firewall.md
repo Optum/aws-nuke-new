@@ -2,13 +2,13 @@
 generated: true
 ---
 
-# AWS::NetworkFirewall::Firewall
+# NetworkFirewall
 
 
 ## Resource
 
 ```text
-AWS::NetworkFirewall::Firewall
+NetworkFirewall
 ```
 
 ### Alternative Resource

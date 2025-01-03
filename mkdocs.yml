@@ -487,6 +487,7 @@ nav:
     - Neptune Cluster: resources/neptune-cluster.md
     - Neptune Instance: resources/neptune-instance.md
     - Neptune Snapshot: resources/neptune-snapshot.md
+    - Network Firewall: resources/network-firewall.md
     - Network Manager Connect Peer: resources/network-manager-connect-peer.md
     - Network Manager Core Network: resources/network-manager-core-network.md
     - Network Manager Global Network: resources/network-manager-global-network.md
