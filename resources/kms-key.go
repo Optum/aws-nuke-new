@@ -15,6 +15,7 @@ import (
 
 	"github.com/ekristen/libnuke/pkg/registry"
 	"github.com/ekristen/libnuke/pkg/resource"
+	libsettings "github.com/ekristen/libnuke/pkg/settings"
 	"github.com/ekristen/libnuke/pkg/types"
 
 	"github.com/ekristen/aws-nuke/v3/pkg/nuke"
@@ -30,6 +31,9 @@ func init() {
 		Lister:   &KMSKeyLister{},
 		DependsOn: []string{
 			KMSAliasResource,
+		},
+		Settings: []string{
+			"IgnoreErrors",
 		},
 	})
 }
@@ -126,12 +130,13 @@ func (l *KMSKeyLister) List(_ context.Context, o interface{}) ([]resource.Resour
 }
 
 type KMSKey struct {
-	svc     kmsiface.KMSAPI
-	ID      *string
-	State   *string
-	Manager *string
-	Alias   *string
-	Tags    []*kms.Tag
+	svc      kmsiface.KMSAPI
+	settings *libsettings.Setting
+	ID       *string
+	State    *string
+	Manager  *string
+	Alias    *string
+	Tags     []*kms.Tag
 }
 
 func (r *KMSKey) Filter() error {
@@ -151,11 +156,21 @@ func (r *KMSKey) Remove(_ context.Context) error {
 		KeyId:               r.ID,
 		PendingWindowInDays: aws.Int64(7),
 	})
+
+	// Ignore errors if the setting is enabled as AWS KMS keys can be in a state where they can't be deleted and we don't want to fail the whole nuke if setting is enabled
+	if err != nil && r.settings.GetBool("IgnoreErrors") {
+		fmt.Printf("ignoring error for key %s. Error: %v\n", *r.ID, err)
+		return nil
+	}
 	return err
 }
 
 func (r *KMSKey) String() string {
 	return *r.ID
+}
+
+func (r *KMSKey) Settings(settings *libsettings.Setting) {
+	r.settings = settings
 }
 
 func (r *KMSKey) Properties() types.Properties {
