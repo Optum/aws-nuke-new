@@ -9,6 +9,8 @@ import (
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
+
+	"github.com/iancoleman/strcase"
 )
 
 const resourceTemplate = `package resources
@@ -16,8 +18,7 @@ const resourceTemplate = `package resources
 import (
 	"context"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/{{.Service}}"
+	"github.com/aws/aws-sdk-go-v2/service/{{.Service}}"
 
 	"github.com/ekristen/libnuke/pkg/resource"
 	"github.com/ekristen/libnuke/pkg/registry"
@@ -39,22 +40,22 @@ func init() {
 
 type {{.Combined}}Lister struct{}
 
-func (l *{{.Combined}}Lister) List(_ context.Context, o interface{}) ([]resource.Resource, error) {
+func (l *{{.Combined}}Lister) List(ctx context.Context, o interface{}) ([]resource.Resource, error) {
 	opts := o.(*nuke.ListerOpts)
-	svc := {{.Service}}.New(opts.Session)
+	svc := {{.Service}}.NewFromConfig(*opts.Config)
 	var resources []resource.Resource
 
 	// NOTE: you might have to modify the code below to actually work, this currently does not 
 	// inspect the aws sdk instead is a jumping off point
-	res, err := svc.List{{.ResourceTypeTitle}}s(&{{.Service}}.List{{.ResourceTypeTitle}}sInput{})
+	res, err := svc.List{{.ResourceTypeTitle}}s(ctx, &{{.Service}}.List{{.ResourceTypeTitle}}sInput{})
 	if err != nil {
 		return nil, err
 	}
 
-	for _, p := range res.{{.ResourceTypeTitle}}s {
+	for _, p := range res.{{.ResourceTypeTitle}}sList {
 		resources = append(resources, &{{.Combined}}{
 			svc:  svc,
-			ID:   p.Id,
+			ID:   p.{{.ResourceTypeTitle}}Id,
 			Tags: p.Tags,
 		})
 	}
@@ -63,14 +64,14 @@ func (l *{{.Combined}}Lister) List(_ context.Context, o interface{}) ([]resource
 }
 
 type {{.Combined}} struct {
-	svc  *{{.Service}}.{{.ServiceTitle}}
+	svc  *{{.Service}}.Client
 	ID   *string
 	Tags []*{{.Service}}.Tag
 }
 
-func (r *{{.Combined}}) Remove(_ context.Context) error {
-	_, err := r.svc.Delete{{.ResourceTypeTitle}}(&{{.Service}}.Delete{{.ResourceTypeTitle}}Input{
-		{{.ResourceTypeTitle}}Id: r.id, 
+func (r *{{.Combined}}) Remove(ctx context.Context) error {
+	_, err := r.svc.Delete{{.ResourceTypeTitle}}(ctx, &{{.Service}}.Delete{{.ResourceTypeTitle}}Input{
+		{{.ResourceTypeTitle}}Id: r.ID, 
 	})
 	return err
 }
@@ -107,8 +108,8 @@ func main() {
 		Service:           strings.ToLower(service),
 		ServiceTitle:      caser.String(service),
 		ResourceType:      resourceType,
-		ResourceTypeTitle: caser.String(resourceType),
-		Combined:          fmt.Sprintf("%s%s", caser.String(service), caser.String(resourceType)),
+		ResourceTypeTitle: strcase.ToCamel(resourceType),
+		Combined:          fmt.Sprintf("%s%s", caser.String(service), strcase.ToCamel(resourceType)),
 	}
 
 	tmpl, err := template.New("resource").Parse(resourceTemplate)

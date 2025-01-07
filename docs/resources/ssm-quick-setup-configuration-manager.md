@@ -2,20 +2,20 @@
 generated: true
 ---
 
-# ResourceExplorer2Index
+# SSMQuickSetupConfigurationManager
 
 
 ## Resource
 
 ```text
-ResourceExplorer2Index
+SSMQuickSetupConfigurationManager
 ```
 
 ## Properties
 
 
 - `ARN`: No Description
-- `Type`: No Description
+- `Name`: No Description
 
 !!! note - Using Properties
     Properties are what [Filters](../config-filtering.md) are written against in your configuration. You use the property

@@ -4,31 +4,32 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
-	cloudformationTypes "github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
-	"github.com/aws/aws-sdk-go-v2/service/iam"
+	"github.com/gotidy/ptr"
+	"github.com/sirupsen/logrus"
 
-	"github.com/ekristen/aws-nuke/v3/pkg/nuke"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/service/cloudformation"
+	"github.com/aws/aws-sdk-go/service/cloudformation/cloudformationiface"
+
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+
+	liberrors "github.com/ekristen/libnuke/pkg/errors"
 	"github.com/ekristen/libnuke/pkg/registry"
 	"github.com/ekristen/libnuke/pkg/resource"
-	libsettings "github.com/ekristen/libnuke/pkg/settings"
+	"github.com/ekristen/libnuke/pkg/settings"
 	"github.com/ekristen/libnuke/pkg/types"
 
-	"github.com/aws/smithy-go"
-
-	"github.com/sirupsen/logrus"
+	"github.com/ekristen/aws-nuke/v3/pkg/nuke"
 )
 
-const (
-	CloudFormationStackResource = "CloudFormationStack"
+const CloudformationMaxDeleteAttempt = 3
 
-	CloudformationMaxDeleteAttempt = 3
-	MaxWaitTime                    = time.Duration(5) * time.Minute
-	ServiceRoleName                = "nuke-service-role-CFS"
-)
+const CloudFormationStackResource = "CloudFormationStack"
 
 func init() {
 	registry.Register(&registry.Registration{
@@ -38,37 +39,48 @@ func init() {
 		Lister:   &CloudFormationStackLister{},
 		Settings: []string{
 			"DisableDeletionProtection",
-			"EnableAutomaticRoleManagment",
+			"CreateRoleToDeleteStack",
 		},
 	})
 }
 
 type CloudFormationStackLister struct{}
 
-func (l *CloudFormationStackLister) List(ctx context.Context, o interface{}) ([]resource.Resource, error) {
+func (l *CloudFormationStackLister) List(_ context.Context, o interface{}) ([]resource.Resource, error) {
 	opts := o.(*nuke.ListerOpts)
-	svc := cloudformation.NewFromConfig(*opts.Config)
+
+	svc := cloudformation.New(opts.Session)
+	iamSvc := iam.NewFromConfig(*opts.Config)
 
 	params := &cloudformation.DescribeStacksInput{}
 	resources := make([]resource.Resource, 0)
 
 	for {
-		resp, err := svc.DescribeStacks(ctx, params)
+		resp, err := svc.DescribeStacks(params)
 		if err != nil {
 			return nil, err
 		}
 		for _, stack := range resp.Stacks {
-			if stack.ParentId != nil && *stack.ParentId != "" {
-				continue
+			newResource := &CloudFormationStack{
+				svc:               svc,
+				iamSvc:            iamSvc,
+				logger:            opts.Logger,
+				maxDeleteAttempts: CloudformationMaxDeleteAttempt,
+				Name:              stack.StackName,
+				Status:            stack.StackStatus,
+				description:       stack.Description,
+				parentID:          stack.ParentId,
+				roleARN:           stack.RoleARN,
+				CreationTime:      stack.CreationTime,
+				LastUpdatedTime:   stack.LastUpdatedTime,
+				Tags:              stack.Tags,
 			}
 
-			resources = append(resources, &CloudFormationStack{
-				svc:               svc,
-				iamSvc:            iam.NewFromConfig(*opts.Config),
-				context:           ctx,
-				stack:             stack,
-				maxDeleteAttempts: CloudformationMaxDeleteAttempt,
-			})
+			if newResource.LastUpdatedTime == nil {
+				newResource.LastUpdatedTime = newResource.CreationTime
+			}
+
+			resources = append(resources, newResource)
 		}
 
 		if resp.NextToken == nil {
@@ -82,245 +94,251 @@ func (l *CloudFormationStackLister) List(ctx context.Context, o interface{}) ([]
 }
 
 type CloudFormationStack struct {
-	svc     *cloudformation.Client
-	iamSvc  *iam.Client
-	context context.Context
-
-	stack             cloudformationTypes.Stack
-	deleteRoleArn     *string
+	svc               cloudformationiface.CloudFormationAPI
+	iamSvc            *iam.Client
+	settings          *settings.Setting
+	logger            *logrus.Entry
+	Name              *string
+	Status            *string
+	CreationTime      *time.Time
+	LastUpdatedTime   *time.Time
+	Tags              []*cloudformation.Tag
+	description       *string
+	parentID          *string
+	roleARN           *string
 	maxDeleteAttempts int
-	settings          *libsettings.Setting
+	roleCreated       bool
+	roleName          string
 }
 
-func (cfs *CloudFormationStack) Settings(settings *libsettings.Setting) {
-	cfs.settings = settings
+func (r *CloudFormationStack) Filter() error {
+	if ptr.ToString(r.description) == "DO NOT MODIFY THIS STACK! This stack is managed by Config Conformance Packs." {
+		return fmt.Errorf("stack is managed by Config Conformance Packs")
+	}
+	return nil
 }
 
-func (cfs *CloudFormationStack) Remove(ctx context.Context) error {
-	if cfs.settings.GetBool("EnableAutomaticRoleManagment") {
-		fmt.Println("Enabling automatic role management")
-	} else {
-		fmt.Println("Automatic role management not enabled")
-	}
+func (r *CloudFormationStack) Settings(setting *settings.Setting) {
+	r.settings = setting
+}
 
-	if cfs.settings.GetBool("EnableAutomaticRoleManagment") {
-		err := cfs.createServiceRoleArn(ctx)
-		if err != nil {
-			return err
-		}
-	}
+func (r *CloudFormationStack) Remove(ctx context.Context) error {
+	return r.removeWithAttempts(ctx, 0)
+}
 
-	err := cfs.removeWithAttempts(0)
+func (r *CloudFormationStack) createRole(ctx context.Context) error {
+	roleParts := strings.Split(ptr.ToString(r.roleARN), "/")
+	_, err := r.iamSvc.CreateRole(ctx, &iam.CreateRoleInput{
+		RoleName: ptr.String(roleParts[len(roleParts)-1]),
+		AssumeRolePolicyDocument: ptr.String(`{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "cloudformation.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}`),
+		Tags: []iamtypes.Tag{
+			{
+				Key:   ptr.String("Managed"),
+				Value: ptr.String("aws-nuke"),
+			},
+		},
+	})
 
-	if cfs.settings.GetBool("EnableAutomaticRoleManagment") {
-		delErr := cfs.deleteServiceRoleArn()
-		if delErr != nil {
-			return delErr
-		}
-	}
+	r.roleCreated = true
+	r.roleName = roleParts[len(roleParts)-1]
 
 	return err
 }
 
-func (cfs *CloudFormationStack) removeWithAttempts(attempt int) error {
-	if err := cfs.doRemove(); err != nil {
-		logrus.Errorf("CloudFormationStack stackName=%s attempt=%d maxAttempts=%d delete failed: %s", *cfs.stack.StackName, attempt, cfs.maxDeleteAttempts, err.Error())
-		var re *smithy.OperationError
-		if errors.As(err, &re) && re.Error() == "Stack ["+*cfs.stack.StackName+"] cannot be deleted while TerminationProtection is enabled" {
-			if cfs.settings.GetBool("DisableDeletionProtection") {
-				logrus.Infof("CloudFormationStack stackName=%s attempt=%d maxAttempts=%d updating termination protection", *cfs.stack.StackName, attempt, cfs.maxDeleteAttempts)
-				_, err = cfs.svc.UpdateTerminationProtection(cfs.context, &cloudformation.UpdateTerminationProtectionInput{
-					EnableTerminationProtection: aws.Bool(false),
-					StackName:                   cfs.stack.StackName,
-				})
-				if err != nil {
-					return err
-				}
-			} else {
-				logrus.Warnf("CloudFormationStack stackName=%s attempt=%d maxAttempts=%d set feature flag to disable deletion protection", *cfs.stack.StackName, attempt, cfs.maxDeleteAttempts)
-				return err
-			}
-		}
-		if attempt >= cfs.maxDeleteAttempts {
-			return errors.New("CFS might not be deleted after this run")
-		} else {
-			return cfs.removeWithAttempts(attempt + 1)
-		}
-	} else {
+func (r *CloudFormationStack) removeRole(ctx context.Context) error {
+	if !r.roleCreated {
 		return nil
 	}
+
+	_, err := r.iamSvc.DeleteRole(ctx, &iam.DeleteRoleInput{
+		RoleName: ptr.String(r.roleName),
+	})
+	return err
 }
 
-func (cfs *CloudFormationStack) doRemove() error {
-	o, err := cfs.svc.DescribeStacks(cfs.context, &cloudformation.DescribeStacksInput{
-		StackName: cfs.stack.StackName,
+func (r *CloudFormationStack) removeWithAttempts(ctx context.Context, attempt int) error {
+	if err := r.doRemove(); err != nil {
+		r.logger.Errorf("CloudFormationStack stackName=%s attempt=%d maxAttempts=%d delete failed: %s",
+			*r.Name, attempt, r.maxDeleteAttempts, err.Error())
+
+		var awsErr awserr.Error
+		ok := errors.As(err, &awsErr)
+		if ok && awsErr.Code() == "ValidationError" {
+			if awsErr.Message() == fmt.Sprintf("Role %s is invalid or cannot be assumed", *r.roleARN) {
+				if r.settings.GetBool("CreateRoleToDeleteStack") {
+					r.logger.Infof("CloudFormationStack stackName=%s attempt=%d maxAttempts=%d creating role to delete stack",
+						*r.Name, attempt, r.maxDeleteAttempts)
+					if err := r.createRole(ctx); err != nil {
+						return err
+					}
+				} else {
+					r.logger.Warnf("CloudFormationStack stackName=%s attempt=%d maxAttempts=%d set feature flag to create role to delete stack",
+						*r.Name, attempt, r.maxDeleteAttempts)
+					return err
+				}
+			} else if awsErr.Message() == fmt.Sprintf("Stack [%s] cannot be deleted while TerminationProtection is enabled", *r.Name) {
+				// check if the setting for the resource is set to allow deletion protection to be disabled
+				if r.settings.GetBool("DisableDeletionProtection") {
+					r.logger.Infof("CloudFormationStack stackName=%s attempt=%d maxAttempts=%d updating termination protection",
+						*r.Name, attempt, r.maxDeleteAttempts)
+					_, err = r.svc.UpdateTerminationProtection(&cloudformation.UpdateTerminationProtectionInput{
+						EnableTerminationProtection: aws.Bool(false),
+						StackName:                   r.Name,
+					})
+					if err != nil {
+						return err
+					}
+				} else {
+					r.logger.Warnf("CloudFormationStack stackName=%s attempt=%d maxAttempts=%d set feature flag to disable deletion protection",
+						*r.Name, attempt, r.maxDeleteAttempts)
+					return err
+				}
+			}
+		}
+
+		if attempt >= r.maxDeleteAttempts {
+			return errors.New("CFS might not be deleted after this run")
+		} else {
+			return r.removeWithAttempts(ctx, attempt+1)
+		}
+	}
+
+	return r.removeRole(ctx)
+}
+
+func GetParentStack(svc cloudformationiface.CloudFormationAPI, stackID string) (*cloudformation.Stack, error) {
+	o, err := svc.DescribeStacks(&cloudformation.DescribeStacksInput{})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, o := range o.Stacks {
+		if *o.StackId == stackID {
+			return o, nil
+		}
+	}
+
+	return nil, nil //nolint:nilnil
+}
+
+func (r *CloudFormationStack) doRemove() error { //nolint:gocyclo
+	if r.parentID != nil {
+		p, err := GetParentStack(r.svc, *r.parentID)
+		if err != nil {
+			return err
+		}
+
+		if p != nil {
+			return liberrors.ErrHoldResource("waiting for parent stack")
+		}
+	}
+
+	o, err := r.svc.DescribeStacks(&cloudformation.DescribeStacksInput{
+		StackName: r.Name,
 	})
 	if err != nil {
-		var re *smithy.OperationError
-		if errors.As(err, &re) {
-			logrus.Infof("CloudFormationStack stackName=%s no longer exists", *cfs.stack.StackName)
-			return nil
+		var awsErr awserr.Error
+		if errors.As(err, &awsErr) {
+			if awsErr.Code() == "ValidationFailed" && strings.HasSuffix(awsErr.Message(), " does not exist") {
+				r.logger.Infof("CloudFormationStack stackName=%s no longer exists", *r.Name)
+				return nil
+			}
 		}
 		return err
 	}
 	stack := o.Stacks[0]
 
-	if stack.StackStatus == cloudformationTypes.StackStatusDeleteComplete {
-		//stack already deleted, no need to re-delete
+	if *stack.StackStatus == cloudformation.StackStatusDeleteComplete {
+		// stack already deleted, no need to re-delete
 		return nil
-	} else if stack.StackStatus == cloudformationTypes.StackStatusDeleteInProgress {
-		logrus.Infof("CloudFormationStack stackName=%s delete in progress. Waiting", *cfs.stack.StackName)
-		waiter := cloudformation.NewStackDeleteCompleteWaiter(cfs.svc)
-		return waiter.Wait(cfs.context, &cloudformation.DescribeStacksInput{
-			StackName: cfs.stack.StackName,
-		}, MaxWaitTime)
-	} else if stack.StackStatus == cloudformationTypes.StackStatusDeleteFailed {
-		logrus.Infof("CloudFormationStack stackName=%s delete failed. Attempting to retain and delete stack", *cfs.stack.StackName)
-		// This means the CFS has undeleteable resources.
+	} else if *stack.StackStatus == cloudformation.StackStatusDeleteInProgress {
+		r.logger.Infof("CloudFormationStack stackName=%s delete in progress. Waiting", *r.Name)
+		return r.svc.WaitUntilStackDeleteComplete(&cloudformation.DescribeStacksInput{
+			StackName: r.Name,
+		})
+	} else if *stack.StackStatus == cloudformation.StackStatusDeleteFailed {
+		r.logger.Infof("CloudFormationStack stackName=%s delete failed. Attempting to retain and delete stack", *r.Name)
+		// This means the CFS has undetectable resources.
 		// In order to move on with nuking, we retain them in the deletion.
-		retainableResources, err := cfs.svc.ListStackResources(cfs.context, &cloudformation.ListStackResourcesInput{
-			StackName: cfs.stack.StackName,
+		retainableResources, err := r.svc.ListStackResources(&cloudformation.ListStackResourcesInput{
+			StackName: r.Name,
 		})
 		if err != nil {
 			return err
 		}
 
-		retain := make([]string, 0)
+		retain := make([]*string, 0)
 
 		for _, r := range retainableResources.StackResourceSummaries {
-			if r.ResourceStatus != cloudformationTypes.ResourceStatusDeleteComplete {
-				retain = append(retain, *r.LogicalResourceId)
+			if *r.ResourceStatus != cloudformation.ResourceStatusDeleteComplete {
+				retain = append(retain, r.LogicalResourceId)
 			}
 		}
 
-		_, err = cfs.svc.DeleteStack(cfs.context, &cloudformation.DeleteStackInput{
-			StackName:       cfs.stack.StackName,
+		if _, err = r.svc.DeleteStack(&cloudformation.DeleteStackInput{
+			StackName:       r.Name,
 			RetainResources: retain,
-			RoleARN:         cfs.deleteRoleArn,
-		})
-		if err != nil {
-			return err
-		}
-		waiter := cloudformation.NewStackDeleteCompleteWaiter(cfs.svc)
-		return waiter.Wait(cfs.context, &cloudformation.DescribeStacksInput{
-			StackName: cfs.stack.StackName,
-		}, MaxWaitTime)
-	} else {
-		deleteWaiter := cloudformation.NewStackDeleteCompleteWaiter(cfs.svc)
-		if err := cfs.waitForStackToStabilize(stack.StackStatus); err != nil {
-			return err
-		} else if _, err := cfs.svc.DeleteStack(cfs.context, &cloudformation.DeleteStackInput{
-			StackName: cfs.stack.StackName,
-			RoleARN:   cfs.deleteRoleArn,
 		}); err != nil {
 			return err
-		} else if err := deleteWaiter.Wait(cfs.context, &cloudformation.DescribeStacksInput{
-			StackName: cfs.stack.StackName,
-		}, MaxWaitTime); err != nil {
+		}
+
+		return r.svc.WaitUntilStackDeleteComplete(&cloudformation.DescribeStacksInput{
+			StackName: r.Name,
+		})
+	} else {
+		if err := r.waitForStackToStabilize(*stack.StackStatus); err != nil {
+			return err
+		} else if _, err := r.svc.DeleteStack(&cloudformation.DeleteStackInput{
+			StackName: r.Name,
+		}); err != nil {
+			return err
+		} else if err := r.svc.WaitUntilStackDeleteComplete(&cloudformation.DescribeStacksInput{
+			StackName: r.Name,
+		}); err != nil {
 			return err
 		} else {
 			return nil
 		}
 	}
 }
-func (cfs *CloudFormationStack) waitForStackToStabilize(currentStatus cloudformationTypes.StackStatus) error {
+
+func (r *CloudFormationStack) waitForStackToStabilize(currentStatus string) error {
 	switch currentStatus {
-	case cloudformationTypes.StackStatusUpdateInProgress:
-		fallthrough
-	case cloudformationTypes.StackStatusUpdateRollbackCompleteCleanupInProgress:
-		fallthrough
-	case cloudformationTypes.StackStatusUpdateRollbackInProgress:
-		logrus.Infof("CloudFormationStack stackName=%s update in progress. Waiting to stabilize", *cfs.stack.StackName)
-		waiter := cloudformation.NewStackUpdateCompleteWaiter(cfs.svc)
-		return waiter.Wait(cfs.context, &cloudformation.DescribeStacksInput{
-			StackName: cfs.stack.StackName,
-		}, MaxWaitTime)
-	case cloudformationTypes.StackStatusCreateInProgress:
-		fallthrough
-	case cloudformationTypes.StackStatusRollbackInProgress:
-		logrus.Infof("CloudFormationStack stackName=%s create in progress. Waiting to stabilize", *cfs.stack.StackName)
-		waiter := cloudformation.NewStackCreateCompleteWaiter(cfs.svc)
-		return waiter.Wait(cfs.context, &cloudformation.DescribeStacksInput{
-			StackName: cfs.stack.StackName,
-		}, MaxWaitTime)
+	case cloudformation.StackStatusUpdateInProgress,
+		cloudformation.StackStatusUpdateRollbackCompleteCleanupInProgress,
+		cloudformation.StackStatusUpdateRollbackInProgress:
+		r.logger.Infof("CloudFormationStack stackName=%s update in progress. Waiting to stabalize", *r.Name)
+
+		return r.svc.WaitUntilStackUpdateComplete(&cloudformation.DescribeStacksInput{
+			StackName: r.Name,
+		})
+	case cloudformation.StackStatusCreateInProgress,
+		cloudformation.StackStatusRollbackInProgress:
+		r.logger.Infof("CloudFormationStack stackName=%s create in progress. Waiting to stabalize", *r.Name)
+
+		return r.svc.WaitUntilStackCreateComplete(&cloudformation.DescribeStacksInput{
+			StackName: r.Name,
+		})
 	default:
 		return nil
 	}
 }
 
-func (cfs *CloudFormationStack) createServiceRoleArn(ctx context.Context) error {
-	serviceRoleName := ServiceRoleName + "-" + *cfs.stack.StackName
-	if len(serviceRoleName) > 64 {
-		serviceRoleName = serviceRoleName[:64]
-	}
-
-	role, _ := cfs.iamSvc.GetRole(ctx, &iam.GetRoleInput{
-		RoleName: &serviceRoleName,
-	})
-	if role != nil && role.Role != nil {
-		// the role exists, the stack is ready for deletion
-		return nil
-	}
-
-	fmt.Println("Creating role")
-	params := iam.CreateRoleInput{
-		AssumeRolePolicyDocument: aws.String("{\"Version\": \"2012-10-17\",\"Statement\": [{\"Effect\": \"Allow\",\"Principal\": {\"Service\": \"cloudformation.amazonaws.com\"},\"Action\": \"sts:AssumeRole\"}]}"),
-		Description:              aws.String("A service role is required to delete a cloudformation stack for which a specific role was used which no longer exists"),
-		RoleName:                 aws.String(serviceRoleName),
-	}
-
-	roleCreationOutput, err := cfs.iamSvc.CreateRole(ctx, &params)
-	if err != nil {
-		fmt.Println("Role creation failed")
-		fmt.Println(err.Error())
-		return err
-	}
-	cfs.deleteRoleArn = roleCreationOutput.Role.Arn
-	fmt.Println("Deletion role arn: ", *cfs.deleteRoleArn)
-
-	// Ensure role has permission to clean up resources created via the stack
-	attachPolicyParams := &iam.AttachRolePolicyInput{
-		PolicyArn: aws.String("arn:aws:iam::aws:policy/AdministratorAccess"),
-		RoleName:  &serviceRoleName,
-	}
-
-	_, err = cfs.iamSvc.AttachRolePolicy(ctx, attachPolicyParams)
-	if err != nil {
-		fmt.Println("Policy attachment failed")
-		fmt.Println(err.Error())
-		return err
-	}
-	time.Sleep(1 * time.Second)
-	return err
+func (r *CloudFormationStack) Properties() types.Properties {
+	return types.NewPropertiesFromStruct(r)
 }
 
-func (cfs *CloudFormationStack) deleteServiceRoleArn() error {
-	serviceRoleName := ServiceRoleName + "-" + *cfs.stack.StackName
-	params := iam.DeleteRoleInput{
-		RoleName: &serviceRoleName,
-	}
-
-	_, err := cfs.iamSvc.DeleteRole(cfs.context, &params)
-	return err
-}
-
-func (cfs *CloudFormationStack) Properties() types.Properties {
-	properties := types.NewProperties()
-	properties.Set("Name", cfs.stack.StackName)
-	properties.Set("CreationTime", cfs.stack.CreationTime.Format(time.RFC3339))
-	if cfs.stack.LastUpdatedTime == nil {
-		properties.Set("LastUpdatedTime", cfs.stack.CreationTime.Format(time.RFC3339))
-	} else {
-		properties.Set("LastUpdatedTime", cfs.stack.LastUpdatedTime.Format(time.RFC3339))
-	}
-
-	for _, tagValue := range cfs.stack.Tags {
-		properties.SetTag(tagValue.Key, tagValue.Value)
-	}
-
-	return properties
-}
-
-func (cfs *CloudFormationStack) String() string {
-	return *cfs.stack.StackName
+func (r *CloudFormationStack) String() string {
+	return *r.Name
 }

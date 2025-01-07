@@ -3,18 +3,20 @@ module github.com/ekristen/aws-nuke/v3
 go 1.21.6
 
 require (
-	github.com/aws/aws-sdk-go v1.54.20
+	github.com/aws/aws-sdk-go v1.55.5
 	github.com/aws/aws-sdk-go-v2 v1.32.7
 	github.com/aws/aws-sdk-go-v2/config v1.28.7
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.48
 	github.com/aws/aws-sdk-go-v2/service/appstream v1.42.0
-	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.56.2
 	github.com/aws/aws-sdk-go-v2/service/iam v1.38.3
 	github.com/aws/aws-sdk-go-v2/service/kafka v1.38.9
 	github.com/aws/aws-sdk-go-v2/service/networkfirewall v1.44.7
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.71.1
+	github.com/aws/aws-sdk-go-v2/service/s3control v1.52.1
 	github.com/aws/aws-sdk-go-v2/service/sagemaker v1.171.0
+	github.com/aws/aws-sdk-go-v2/service/ssmquicksetup v1.3.2
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.3
+	github.com/aws/aws-sdk-go-v2/service/transfer v1.55.1
 	github.com/aws/aws-sdk-go-v2/service/wafregional v1.25.8
 	github.com/aws/smithy-go v1.22.1
 	github.com/ekristen/libnuke v0.24.0
@@ -22,6 +24,7 @@ require (
 	github.com/golang/mock v1.6.0
 	github.com/google/uuid v1.6.0
 	github.com/gotidy/ptr v1.4.0
+	github.com/iancoleman/strcase v0.3.0
 	github.com/pkg/errors v0.9.1
 	github.com/rebuy-de/aws-nuke/v2 v2.25.0
 	github.com/sirupsen/logrus v1.9.3
