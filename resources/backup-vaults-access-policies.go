@@ -2,6 +2,8 @@ package resources
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/ekristen/aws-nuke/v3/pkg/nuke"
 	"github.com/ekristen/libnuke/pkg/registry"
@@ -132,4 +134,11 @@ func (b *BackupVaultAccessPolicy) Remove(_ context.Context) error {
 
 func (b *BackupVaultAccessPolicy) String() string {
 	return b.backupVaultName
+}
+
+func (b *BackupVaultAccessPolicy) Filter() error {
+	if strings.HasPrefix(b.backupVaultName, "aws/efs/automatic-backup-vault") {
+		return fmt.Errorf("cannot delete EFS automatic backups backup policy")
+	}
+	return nil
 }

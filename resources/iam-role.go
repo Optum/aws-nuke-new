@@ -30,6 +30,7 @@ func init() {
 		Lister:   &IAMRoleLister{},
 		DependsOn: []string{
 			IAMRolePolicyAttachmentResource,
+			CloudFormationStackResource, // IAM roles can be used in deletion of CloudFormation stacks
 		},
 		DeprecatedAliases: []string{
 			"IamRole",

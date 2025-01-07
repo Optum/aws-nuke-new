@@ -7,6 +7,9 @@ docs-serve:
 docs-seed:
 	cp README.md docs/index.md
 
+build:
+	go build -ldflags '-s -w -extldflags="-static"' -o bin/aws-nuke main.go
+
 generate:
 	go generate ./...
 

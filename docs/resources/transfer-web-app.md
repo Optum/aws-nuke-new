@@ -2,25 +2,19 @@
 generated: true
 ---
 
-# AWS::NetworkFirewall::Firewall
+# TransferWebApp
 
 
 ## Resource
 
 ```text
-AWS::NetworkFirewall::Firewall
+TransferWebApp
 ```
 
-### Alternative Resource
+## Properties
 
-!!! note - Cloud Control API - Alternative Resource
-    This resource can also be controlled and used via Cloud Control API. Please refer to the documentation for
-    [Cloud Control Resources](../config-cloud-control.md) for more information.
 
-```text
-AWS::NetworkFirewall::Firewall
-```
-
+- `ID`: No Description
 
 !!! note - Using Properties
     Properties are what [Filters](../config-filtering.md) are written against in your configuration. You use the property

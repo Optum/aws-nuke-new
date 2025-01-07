@@ -33,6 +33,19 @@ the filter.
 
 The string value is always what is used in the output of the log format when a resource is identified.
 
+## Settings
+
+- `IgnoreErrors`
+
+
+### IgnoreErrors
+
+KMS keys can be often in a state that can't be deleted if the KMS policy had been malformed. Give option to igore error in order to not fail the overall nuke.
+
+```text
+IgnoreErrors
+```
+
 ### DependsOn
 
 !!! important - Experimental Feature

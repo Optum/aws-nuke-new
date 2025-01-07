@@ -79,6 +79,7 @@ nav:
     - Global Filters: features/global-filters.md
     - Filter Groups: features/filter-groups.md
     - Enabled Regions: features/enabled-regions.md
+    - Name Expansion: features/name-expansion.md
     - Signed Binaries: features/signed-binaries.md
   - CLI:
     - Usage: cli-usage.md
@@ -120,7 +121,6 @@ nav:
     - AWS Ecr Replication Configuration: resources/aws-ecr-replication-configuration.md
     - AWS Mwaa Environment: resources/aws-mwaa-environment.md
     - AWS Network Firewall Firewall Policy: resources/aws-network-firewall-firewall-policy.md
-    - AWS Network Firewall Firewall: resources/aws-network-firewall-firewall.md
     - AWS Network Firewall Rule Group: resources/aws-network-firewall-rule-group.md
     - AWS Synthetics Canary: resources/aws-synthetics-canary.md
     - AWS Timestream Database: resources/aws-timestream-database.md
@@ -486,6 +486,7 @@ nav:
     - Neptune Cluster: resources/neptune-cluster.md
     - Neptune Instance: resources/neptune-instance.md
     - Neptune Snapshot: resources/neptune-snapshot.md
+    - Network Firewall: resources/network-firewall.md
     - Network Manager Connect Peer: resources/network-manager-connect-peer.md
     - Network Manager Core Network: resources/network-manager-core-network.md
     - Network Manager Global Network: resources/network-manager-global-network.md
@@ -542,6 +543,9 @@ nav:
     - Route 53 Resolver Rule: resources/route-53-resolver-rule.md
     - Route 53 Resource Record Set: resources/route-53-resource-record-set.md
     - Route 53 Traffic Policy: resources/route-53-traffic-policy.md
+    - S3 Access Grants Grant: resources/s3-access-grants-grant.md
+    - S3 Access Grants Instance: resources/s3-access-grants-instance.md
+    - S3 Access Grants Location: resources/s3-access-grants-location.md
     - S3 Access Point: resources/s3-access-point.md
     - S3 Bucket: resources/s3-bucket.md
     - S3 Multipart Upload: resources/s3-multipart-upload.md
@@ -557,6 +561,7 @@ nav:
     - SSM Maintenance Window: resources/ssm-maintenance-window.md
     - SSM Parameter: resources/ssm-parameter.md
     - SSM Patch Baseline: resources/ssm-patch-baseline.md
+    - SSM Quick Setup Configuration Manager: resources/ssm-quick-setup-configuration-manager.md
     - SSM Resource Data Sync: resources/ssm-resource-data-sync.md
     - Sage Maker App: resources/sage-maker-app.md
     - Sage Maker Domain: resources/sage-maker-domain.md
@@ -605,6 +610,7 @@ nav:
     - Transcribe Vocabulary: resources/transcribe-vocabulary.md
     - Transfer Server User: resources/transfer-server-user.md
     - Transfer Server: resources/transfer-server.md
+    - Transfer Web App: resources/transfer-web-app.md
     - WAF Regional Byte Match Set Ip: resources/waf-regional-byte-match-set-ip.md
     - WAF Regional Byte Match Set: resources/waf-regional-byte-match-set.md
     - WAF Regional Ip Set Ip: resources/waf-regional-ip-set-ip.md
