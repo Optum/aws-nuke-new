@@ -13,6 +13,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/kafka v1.38.9
 	github.com/aws/aws-sdk-go-v2/service/networkfirewall v1.44.7
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.71.1
+	github.com/aws/aws-sdk-go-v2/service/sagemaker v1.171.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.3
 	github.com/aws/aws-sdk-go-v2/service/wafregional v1.25.8
 	github.com/aws/smithy-go v1.22.1
