@@ -7,10 +7,11 @@ import (
 
 	"github.com/gotidy/ptr"
 
-	"github.com/aws/aws-sdk-go/service/appstream"
+	"github.com/aws/aws-sdk-go-v2/service/appstream"
 
 	"github.com/ekristen/libnuke/pkg/registry"
 	"github.com/ekristen/libnuke/pkg/resource"
+	"github.com/ekristen/libnuke/pkg/types"
 
 	"github.com/ekristen/aws-nuke/v3/pkg/nuke"
 )
@@ -28,38 +29,75 @@ func init() {
 
 type AppStreamImageLister struct{}
 
-func (l *AppStreamImageLister) List(_ context.Context, o interface{}) ([]resource.Resource, error) {
+func (l *AppStreamImageLister) List(ctx context.Context, o interface{}) ([]resource.Resource, error) {
 	opts := o.(*nuke.ListerOpts)
+	svc := appstream.NewFromConfig(*opts.Config)
 
-	svc := appstream.New(opts.Session)
 	resources := make([]resource.Resource, 0)
+	var nextToken *string
 
-	params := &appstream.DescribeImagesInput{}
+	for ok := true; ok; ok = (nextToken != nil) {
+		params := &appstream.DescribeImagesInput{
+			NextToken: nextToken,
+		}
 
-	output, err := svc.DescribeImages(params)
-	if err != nil {
-		return nil, err
-	}
+		output, err := svc.DescribeImages(ctx, params)
+		if err != nil {
+			return nil, err
+		}
+		nextToken = output.NextToken
 
-	for _, image := range output.Images {
-		resources = append(resources, &AppStreamImage{
-			svc:        svc,
-			name:       image.Name,
-			visibility: image.Visibility,
-		})
+		for _, image := range output.Images {
+			sharedAccounts := []*string{}
+			visibility := string(image.Visibility)
+
+			// Filter out public images
+			if strings.ToUpper(visibility) != "PUBLIC" {
+				imagePerms, err := svc.DescribeImagePermissions(ctx, &appstream.DescribeImagePermissionsInput{
+					Name: image.Name,
+				})
+
+				if err != nil {
+					return nil, err
+				}
+
+				for _, permission := range imagePerms.SharedImagePermissionsList {
+					sharedAccounts = append(sharedAccounts, permission.SharedAccountId)
+				}
+
+				resources = append(resources, &AppStreamImage{
+					svc:            svc,
+					name:           image.Name,
+					visibility:     &visibility,
+					sharedAccounts: sharedAccounts,
+				})
+			}
+		}
 	}
 
 	return resources, nil
 }
 
 type AppStreamImage struct {
-	svc        *appstream.AppStream
-	name       *string
-	visibility *string
+	svc            *appstream.Client
+	name           *string
+	visibility     *string
+	sharedAccounts []*string
 }
 
-func (f *AppStreamImage) Remove(_ context.Context) error {
-	_, err := f.svc.DeleteImage(&appstream.DeleteImageInput{
+func (f *AppStreamImage) Remove(ctx context.Context) error {
+	for _, account := range f.sharedAccounts {
+		_, err := f.svc.DeleteImagePermissions(ctx, &appstream.DeleteImagePermissionsInput{
+			Name:            f.name,
+			SharedAccountId: account,
+		})
+		if err != nil {
+			fmt.Println("Error deleting image permissions", err)
+			return err
+		}
+	}
+
+	_, err := f.svc.DeleteImage(ctx, &appstream.DeleteImageInput{
 		Name: f.name,
 	})
 
@@ -75,4 +113,8 @@ func (f *AppStreamImage) Filter() error {
 		return fmt.Errorf("cannot delete public AWS images")
 	}
 	return nil
+}
+
+func (f *AppStreamImage) Properties() types.Properties {
+	return types.NewPropertiesFromStruct(f)
 }

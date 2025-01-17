@@ -10,7 +10,7 @@ dynamically populated and therefore cannot be documented here.
 ## Resource
 
 ```text
-AWS::NetworkFirewall::Firewall
+NetworkFirewall
 ```
 
 

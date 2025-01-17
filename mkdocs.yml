@@ -122,7 +122,6 @@ nav:
     - AWS Ecr Replication Configuration: resources/aws-ecr-replication-configuration.md
     - AWS Mwaa Environment: resources/aws-mwaa-environment.md
     - AWS Network Firewall Firewall Policy: resources/aws-network-firewall-firewall-policy.md
-    - AWS Network Firewall Firewall: resources/aws-network-firewall-firewall.md
     - AWS Network Firewall Rule Group: resources/aws-network-firewall-rule-group.md
     - AWS Synthetics Canary: resources/aws-synthetics-canary.md
     - AWS Timestream Database: resources/aws-timestream-database.md
@@ -488,6 +487,7 @@ nav:
     - Neptune Cluster: resources/neptune-cluster.md
     - Neptune Instance: resources/neptune-instance.md
     - Neptune Snapshot: resources/neptune-snapshot.md
+    - Network Firewall: resources/network-firewall.md
     - Network Manager Connect Peer: resources/network-manager-connect-peer.md
     - Network Manager Core Network: resources/network-manager-core-network.md
     - Network Manager Global Network: resources/network-manager-global-network.md

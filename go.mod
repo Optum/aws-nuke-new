@@ -7,12 +7,17 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.32.7
 	github.com/aws/aws-sdk-go-v2/config v1.28.7
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.48
+	github.com/aws/aws-sdk-go-v2/service/appstream v1.42.0
 	github.com/aws/aws-sdk-go-v2/service/iam v1.38.3
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.72.0
+	github.com/aws/aws-sdk-go-v2/service/kafka v1.38.9
+	github.com/aws/aws-sdk-go-v2/service/networkfirewall v1.44.7
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.71.1
 	github.com/aws/aws-sdk-go-v2/service/s3control v1.52.1
+	github.com/aws/aws-sdk-go-v2/service/sagemaker v1.171.0
 	github.com/aws/aws-sdk-go-v2/service/ssmquicksetup v1.3.2
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.3
 	github.com/aws/aws-sdk-go-v2/service/transfer v1.55.1
+	github.com/aws/aws-sdk-go-v2/service/wafregional v1.25.8
 	github.com/aws/smithy-go v1.22.1
 	github.com/ekristen/libnuke v0.24.1
 	github.com/fatih/color v1.18.0
@@ -21,6 +26,7 @@ require (
 	github.com/gotidy/ptr v1.4.0
 	github.com/iancoleman/strcase v0.3.0
 	github.com/pkg/errors v0.9.1
+	github.com/rebuy-de/aws-nuke/v2 v2.25.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli/v2 v2.27.5
@@ -55,10 +61,7 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/stevenle/topsort v0.2.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
-	golang.org/x/mod v0.17.0 // indirect
 	golang.org/x/sync v0.10.0 // indirect
 	golang.org/x/sys v0.25.0 // indirect
-	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d // indirect
-	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
