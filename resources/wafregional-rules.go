@@ -81,10 +81,10 @@ func (f *WAFRegionalRule) Remove(ctx context.Context) error {
 	}
 
 	ruleUpdates := []wafregionalTypes.RuleUpdate{}
-	for _, predicate := range f.rule.Predicates {
+	for i := range f.rule.Predicates {
 		ruleUpdates = append(ruleUpdates, wafregionalTypes.RuleUpdate{
 			Action:    wafregionalTypes.ChangeActionDelete,
-			Predicate: &predicate,
+			Predicate: &f.rule.Predicates[i],
 		})
 	}
 

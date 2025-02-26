@@ -157,7 +157,8 @@ func (r *KMSKey) Remove(_ context.Context) error {
 		PendingWindowInDays: aws.Int64(7),
 	})
 
-	// Ignore errors if the setting is enabled as AWS KMS keys can be in a state where they can't be deleted and we don't want to fail the whole nuke if setting is enabled
+	// Ignore errors if the setting is enabled as AWS KMS keys can be in a state where they can't
+	// be deleted and we don't want to fail the whole nuke if setting is enabled
 	if err != nil && r.settings.GetBool("IgnoreErrors") {
 		fmt.Printf("ignoring error for key %s. Error: %v\n", *r.ID, err)
 		return nil
