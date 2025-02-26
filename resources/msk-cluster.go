@@ -45,7 +45,6 @@ func (l *MSKClusterLister) List(ctx context.Context, o interface{}) ([]resource.
 			name:    *cluster.ClusterName,
 			tags:    cluster.Tags,
 		})
-
 	}
 	return resources, nil
 }

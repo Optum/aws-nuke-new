@@ -47,14 +47,14 @@ func (l *AppStreamImageLister) List(ctx context.Context, o interface{}) ([]resou
 		}
 		nextToken = output.NextToken
 
-		for _, image := range output.Images {
+		for i := range output.Images {
 			sharedAccounts := []*string{}
-			visibility := string(image.Visibility)
+			visibility := string(output.Images[i].Visibility)
 
 			// Filter out public images
-			if strings.ToUpper(visibility) != "PUBLIC" {
+			if !strings.EqualFold(visibility, "PUBLIC") {
 				imagePerms, err := svc.DescribeImagePermissions(ctx, &appstream.DescribeImagePermissionsInput{
-					Name: image.Name,
+					Name: output.Images[i].Name,
 				})
 
 				if err != nil {
@@ -67,7 +67,7 @@ func (l *AppStreamImageLister) List(ctx context.Context, o interface{}) ([]resou
 
 				resources = append(resources, &AppStreamImage{
 					svc:            svc,
-					name:           image.Name,
+					name:           output.Images[i].Name,
 					visibility:     &visibility,
 					sharedAccounts: sharedAccounts,
 				})
