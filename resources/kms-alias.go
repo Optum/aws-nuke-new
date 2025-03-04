@@ -11,6 +11,7 @@ import (
 
 	"github.com/ekristen/libnuke/pkg/registry"
 	"github.com/ekristen/libnuke/pkg/resource"
+	libsettings "github.com/ekristen/libnuke/pkg/settings"
 	"github.com/ekristen/libnuke/pkg/types"
 
 	"github.com/ekristen/aws-nuke/v3/pkg/nuke"
@@ -24,6 +25,9 @@ func init() {
 		Scope:    nuke.Account,
 		Resource: &KMSAlias{},
 		Lister:   &KMSAliasLister{},
+		Settings: []string{
+			"IgnoreErrors",
+		},
 	})
 }
 
@@ -72,6 +76,7 @@ func (l *KMSAliasLister) List(_ context.Context, o interface{}) ([]resource.Reso
 
 type KMSAlias struct {
 	svc          kmsiface.KMSAPI
+	settings     *libsettings.Setting
 	Name         *string    `description:"The name of the KMS alias"`
 	CreationDate *time.Time `description:"The creation date of the KMS alias"`
 	TargetKeyID  *string    `description:"The KMS Key ID that the alias points to"`
@@ -89,11 +94,23 @@ func (r *KMSAlias) Remove(_ context.Context) error {
 	_, err := r.svc.DeleteAlias(&kms.DeleteAliasInput{
 		AliasName: r.Name,
 	})
+
+	// Ignore errors if the setting is enabled as AWS KMS keys can be in a state where they can't
+	// be deleted and we don't want to fail the whole nuke if setting is enabled
+	if err != nil && r.settings.GetBool("IgnoreErrors") {
+		fmt.Printf("ignoring error for key %s. Error: %v\n", *r.Name, err)
+		return nil
+	}
+
 	return err
 }
 
 func (r *KMSAlias) String() string {
 	return *r.Name
+}
+
+func (r *KMSAlias) Settings(settings *libsettings.Setting) {
+	r.settings = settings
 }
 
 func (r *KMSAlias) Properties() types.Properties {

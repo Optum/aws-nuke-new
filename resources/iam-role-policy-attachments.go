@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"regexp"
 
 	"fmt"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/ekristen/libnuke/pkg/registry"
 	"github.com/ekristen/libnuke/pkg/resource"
+	libsettings "github.com/ekristen/libnuke/pkg/settings"
 	"github.com/ekristen/libnuke/pkg/types"
 
 	"github.com/ekristen/aws-nuke/v3/pkg/nuke"
@@ -30,31 +32,63 @@ func init() {
 		DeprecatedAliases: []string{
 			"IamRolePolicyAttachement",
 		},
+		Settings: []string{
+			"CustomFilters",
+		},
 	})
 }
 
 type IAMRolePolicyAttachment struct {
-	svc        iamiface.IAMAPI
-	policyArn  string
-	policyName string
-	role       *iam.Role
+	svc           iamiface.IAMAPI
+	settings      *libsettings.Setting
+	CustomFilters []CustomFilters
+	policyArn     string
+	policyName    string
+	role          *iam.Role
 }
 
-func (e *IAMRolePolicyAttachment) Filter() error {
-	if strings.Contains(e.policyArn, ":iam::aws:policy/aws-service-role/") {
+func (r *IAMRolePolicyAttachment) Settings(settings *libsettings.Setting) {
+	r.settings = settings
+	r.CustomFilters = NewCustomFilters(settings.Get("CustomFilters"))
+}
+
+func (r *IAMRolePolicyAttachment) FilterbyCustomFilters() error {
+	for i := range r.CustomFilters {
+		if r.CustomFilters[i].Type == IAMPathName {
+			matched, _ := regexp.MatchString(r.CustomFilters[i].Value, *r.role.Path) // Don't check error as we only return err on successful filter
+			if matched {
+				return fmt.Errorf("filtered by path custom filter")
+			}
+		} else if r.CustomFilters[i].Type == IAMTagName {
+			for _, tag := range r.role.Tags {
+				matchedKey, _ := regexp.MatchString(r.CustomFilters[i].Value, *tag.Key)
+				matchedValue, _ := regexp.MatchString(r.CustomFilters[i].Value, *tag.Value)
+				if matchedKey {
+					return fmt.Errorf("filtered by tag key custom filter")
+				} else if matchedValue {
+					return fmt.Errorf("filtered by tag value custom filter")
+				}
+			}
+		}
+	}
+	return r.FilterbyCustomFilters()
+}
+
+func (r *IAMRolePolicyAttachment) Filter() error {
+	if strings.Contains(r.policyArn, ":iam::aws:policy/aws-service-role/") {
 		return fmt.Errorf("cannot detach from service roles")
 	}
-	if strings.HasPrefix(*e.role.Path, "/aws-reserved/sso.amazonaws.com/") {
+	if strings.HasPrefix(*r.role.Path, "/aws-reserved/sso.amazonaws.com/") {
 		return fmt.Errorf("cannot detach from SSO roles")
 	}
 	return nil
 }
 
-func (e *IAMRolePolicyAttachment) Remove(_ context.Context) error {
-	_, err := e.svc.DetachRolePolicy(
+func (r *IAMRolePolicyAttachment) Remove(_ context.Context) error {
+	_, err := r.svc.DetachRolePolicy(
 		&iam.DetachRolePolicyInput{
-			PolicyArn: &e.policyArn,
-			RoleName:  e.role.RoleName,
+			PolicyArn: &r.policyArn,
+			RoleName:  r.role.RoleName,
 		})
 	if err != nil {
 		return err
@@ -63,23 +97,23 @@ func (e *IAMRolePolicyAttachment) Remove(_ context.Context) error {
 	return nil
 }
 
-func (e *IAMRolePolicyAttachment) Properties() types.Properties {
+func (r *IAMRolePolicyAttachment) Properties() types.Properties {
 	properties := types.NewProperties().
-		Set("RoleName", e.role.RoleName).
-		Set("RolePath", e.role.Path).
-		Set("RoleLastUsed", getLastUsedDate(e.role)).
-		Set("RoleCreateDate", e.role.CreateDate.Format(time.RFC3339)).
-		Set("PolicyName", e.policyName).
-		Set("PolicyArn", e.policyArn)
+		Set("RoleName", r.role.RoleName).
+		Set("RolePath", r.role.Path).
+		Set("RoleLastUsed", getLastUsedDate(r.role)).
+		Set("RoleCreateDate", r.role.CreateDate.Format(time.RFC3339)).
+		Set("PolicyName", r.policyName).
+		Set("PolicyArn", r.policyArn)
 
-	for _, tag := range e.role.Tags {
+	for _, tag := range r.role.Tags {
 		properties.SetTagWithPrefix("role", tag.Key, tag.Value)
 	}
 	return properties
 }
 
-func (e *IAMRolePolicyAttachment) String() string {
-	return fmt.Sprintf("%s -> %s", *e.role.RoleName, e.policyName)
+func (r *IAMRolePolicyAttachment) String() string {
+	return fmt.Sprintf("%s -> %s", *r.role.RoleName, r.policyName)
 }
 
 // -----------------------
