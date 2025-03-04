@@ -3,6 +3,7 @@ package resources
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -37,22 +38,88 @@ func init() {
 		},
 		Settings: []string{
 			"IncludeServiceLinkedRoles",
+			"CustomFilters",
 		},
 	})
 }
 
 type IAMRole struct {
-	svc          iamiface.IAMAPI
-	settings     *libsettings.Setting
-	Name         *string
-	Path         *string
-	CreateDate   *time.Time
-	LastUsedDate *time.Time
-	Tags         []*iam.Tag
+	svc           iamiface.IAMAPI
+	settings      *libsettings.Setting
+	CustomFilters []CustomFilters
+	Name          *string
+	Path          *string
+	CreateDate    *time.Time
+	LastUsedDate  *time.Time
+	Tags          []*iam.Tag
+}
+
+type CustomFilters struct {
+	Type  string `json:"type"`
+	Value string `json:"value"`
+}
+
+func NewCustomFilters(arg interface{}) []CustomFilters {
+	var filters []CustomFilters
+	switch data := arg.(type) {
+	case map[string]interface{}:
+		filters = append(filters, CustomFilters{
+			Type:  fmt.Sprintf("%v", data["type"]),
+			Value: fmt.Sprintf("%v", data["value"]),
+		})
+	case map[interface{}]interface{}:
+		stringMap := make(map[string]interface{})
+		for key, value := range data {
+			strKey := fmt.Sprintf("%v", key)
+			stringMap[strKey] = value
+		}
+		nf := NewCustomFilters(stringMap)
+		filters = append(filters, nf...)
+	case []map[string]interface{}:
+		for _, item := range data {
+			nf := NewCustomFilters(item)
+			filters = append(filters, nf...)
+		}
+	case []map[interface{}]interface{}:
+		for _, item := range data {
+			nf := NewCustomFilters(item)
+			filters = append(filters, nf...)
+		}
+	case []interface{}:
+		for _, item := range data {
+			nf := NewCustomFilters(item)
+			filters = append(filters, nf...)
+		}
+	default:
+	}
+	return filters
 }
 
 func (r *IAMRole) Settings(settings *libsettings.Setting) {
 	r.settings = settings
+	r.CustomFilters = NewCustomFilters(settings.Get("CustomFilters"))
+}
+
+func (r *IAMRole) FilterbyCustomFilters() error {
+	for i := range r.CustomFilters {
+		if r.CustomFilters[i].Type == IAMPathName {
+			matched, _ := regexp.MatchString(r.CustomFilters[i].Value, *r.Path) // Don't check error as we only return err on successful filter
+			if matched {
+				return fmt.Errorf("filtered by path custom filter")
+			}
+		} else if r.CustomFilters[i].Type == IAMTagName {
+			for _, tag := range r.Tags {
+				matchedKey, _ := regexp.MatchString(r.CustomFilters[i].Value, *tag.Key)
+				matchedValue, _ := regexp.MatchString(r.CustomFilters[i].Value, *tag.Value)
+				if matchedKey {
+					return fmt.Errorf("filtered by tag key custom filter")
+				} else if matchedValue {
+					return fmt.Errorf("filtered by tag value custom filter")
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (r *IAMRole) Filter() error {
@@ -62,7 +129,8 @@ func (r *IAMRole) Filter() error {
 	if strings.HasPrefix(*r.Path, "/aws-reserved/sso.amazonaws.com/") {
 		return fmt.Errorf("cannot delete SSO roles")
 	}
-	return nil
+
+	return r.FilterbyCustomFilters()
 }
 
 func (r *IAMRole) Remove(_ context.Context) error {
