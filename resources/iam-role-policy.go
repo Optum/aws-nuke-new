@@ -3,6 +3,7 @@ package resources
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/ekristen/libnuke/pkg/registry"
 	"github.com/ekristen/libnuke/pkg/resource"
+	libsettings "github.com/ekristen/libnuke/pkg/settings"
 	"github.com/ekristen/libnuke/pkg/types"
 
 	"github.com/ekristen/aws-nuke/v3/pkg/nuke"
@@ -25,33 +27,65 @@ func init() {
 		Scope:    nuke.Account,
 		Resource: &IAMRolePolicy{},
 		Lister:   &IAMRolePolicyLister{},
+		Settings: []string{
+			"CustomFilters",
+		},
 	})
 }
 
 type IAMRolePolicy struct {
-	svc        iamiface.IAMAPI
-	roleID     string
-	rolePath   string
-	roleName   string
-	policyName string
-	roleTags   []*iam.Tag
+	svc           iamiface.IAMAPI
+	settings      *libsettings.Setting
+	CustomFilters []CustomFilters
+	roleID        string
+	rolePath      string
+	roleName      string
+	policyName    string
+	roleTags      []*iam.Tag
 }
 
-func (e *IAMRolePolicy) Filter() error {
-	if strings.HasPrefix(e.rolePath, "/aws-service-role/") {
-		return fmt.Errorf("cannot alter service roles")
-	}
-	if strings.HasPrefix(e.rolePath, "/aws-reserved/sso.amazonaws.com/") {
-		return fmt.Errorf("cannot alter sso roles")
+func (r *IAMRolePolicy) Settings(settings *libsettings.Setting) {
+	r.settings = settings
+	r.CustomFilters = NewCustomFilters(settings.Get("CustomFilters"))
+}
+
+func (r *IAMRolePolicy) FilterbyCustomFilters() error {
+	for i := range r.CustomFilters {
+		if r.CustomFilters[i].Type == IAMPathName {
+			matched, _ := regexp.MatchString(r.CustomFilters[i].Value, r.rolePath) // Don't check error as we only return err on successful filter
+			if matched {
+				return fmt.Errorf("filtered by path custom filter")
+			}
+		} else if r.CustomFilters[i].Type == IAMTagName {
+			for _, tag := range r.roleTags {
+				matchedKey, _ := regexp.MatchString(r.CustomFilters[i].Value, *tag.Key)
+				matchedValue, _ := regexp.MatchString(r.CustomFilters[i].Value, *tag.Value)
+				if matchedKey {
+					return fmt.Errorf("filtered by tag key custom filter")
+				} else if matchedValue {
+					return fmt.Errorf("filtered by tag value custom filter")
+				}
+			}
+		}
 	}
 	return nil
 }
 
-func (e *IAMRolePolicy) Remove(_ context.Context) error {
-	_, err := e.svc.DeleteRolePolicy(
+func (r *IAMRolePolicy) Filter() error {
+	if strings.HasPrefix(r.rolePath, "/aws-service-role/") {
+		return fmt.Errorf("cannot alter service roles")
+	}
+	if strings.HasPrefix(r.rolePath, "/aws-reserved/sso.amazonaws.com/") {
+		return fmt.Errorf("cannot alter sso roles")
+	}
+	return r.FilterbyCustomFilters()
+}
+
+func (r *IAMRolePolicy) Remove(_ context.Context) error {
+	_, err := r.svc.DeleteRolePolicy(
 		&iam.DeleteRolePolicyInput{
-			RoleName:   &e.roleName,
-			PolicyName: &e.policyName,
+			RoleName:   &r.roleName,
+			PolicyName: &r.policyName,
 		})
 	if err != nil {
 		return err
@@ -60,21 +94,21 @@ func (e *IAMRolePolicy) Remove(_ context.Context) error {
 	return nil
 }
 
-func (e *IAMRolePolicy) Properties() types.Properties {
+func (r *IAMRolePolicy) Properties() types.Properties {
 	properties := types.NewProperties()
-	properties.Set("PolicyName", e.policyName)
-	properties.Set("role:RoleName", e.roleName)
-	properties.Set("role:RoleID", e.roleID)
-	properties.Set("role:Path", e.rolePath)
+	properties.Set("PolicyName", r.policyName)
+	properties.Set("role:RoleName", r.roleName)
+	properties.Set("role:RoleID", r.roleID)
+	properties.Set("role:Path", r.rolePath)
 
-	for _, tagValue := range e.roleTags {
+	for _, tagValue := range r.roleTags {
 		properties.SetTagWithPrefix("role", tagValue.Key, tagValue.Value)
 	}
 	return properties
 }
 
-func (e *IAMRolePolicy) String() string {
-	return fmt.Sprintf("%s -> %s", e.roleName, e.policyName)
+func (r *IAMRolePolicy) String() string {
+	return fmt.Sprintf("%s -> %s", r.roleName, r.policyName)
 }
 
 // ----------------------

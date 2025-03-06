@@ -2,6 +2,8 @@ package resources
 
 import (
 	"context"
+	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -12,12 +14,15 @@ import (
 
 	"github.com/ekristen/libnuke/pkg/registry"
 	"github.com/ekristen/libnuke/pkg/resource"
+	libsettings "github.com/ekristen/libnuke/pkg/settings"
 	"github.com/ekristen/libnuke/pkg/types"
 
 	"github.com/ekristen/aws-nuke/v3/pkg/nuke"
 )
 
 const IAMPolicyResource = "IAMPolicy"
+const IAMPathName = "Path"
+const IAMTagName = "Tag"
 
 func init() {
 	registry.Register(&registry.Registration{
@@ -33,7 +38,53 @@ func init() {
 		DeprecatedAliases: []string{
 			"IamPolicy",
 		},
+		Settings: []string{
+			"CustomFilters",
+		},
 	})
+}
+
+type IAMPolicy struct {
+	svc           iamiface.IAMAPI
+	settings      *libsettings.Setting
+	CustomFilters []CustomFilters
+	Name          *string
+	PolicyID      *string
+	ARN           *string
+	Path          *string
+	CreateDate    *time.Time
+	Tags          []*iam.Tag
+}
+
+func (r *IAMPolicy) Settings(settings *libsettings.Setting) {
+	r.settings = settings
+	r.CustomFilters = NewCustomFilters(settings.Get("CustomFilters"))
+}
+
+func (r *IAMPolicy) FilterbyCustomFilters() error {
+	for i := range r.CustomFilters {
+		if r.CustomFilters[i].Type == IAMPathName {
+			matched, _ := regexp.MatchString(r.CustomFilters[i].Value, *r.Path) // Don't check error as we only return err on successful filter
+			if matched {
+				return fmt.Errorf("filtered by path custom filter")
+			}
+		} else if r.CustomFilters[i].Type == IAMTagName {
+			for _, tag := range r.Tags {
+				matchedKey, _ := regexp.MatchString(r.CustomFilters[i].Value, *tag.Key)
+				matchedValue, _ := regexp.MatchString(r.CustomFilters[i].Value, *tag.Value)
+				if matchedKey {
+					return fmt.Errorf("filtered by tag key custom filter")
+				} else if matchedValue {
+					return fmt.Errorf("filtered by tag value custom filter")
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (r *IAMPolicy) Filter() error {
+	return r.FilterbyCustomFilters()
 }
 
 type IAMPolicyLister struct{}
@@ -79,16 +130,6 @@ func (l *IAMPolicyLister) List(_ context.Context, o interface{}) ([]resource.Res
 	}
 
 	return resources, nil
-}
-
-type IAMPolicy struct {
-	svc        iamiface.IAMAPI
-	Name       *string
-	PolicyID   *string
-	ARN        *string
-	Path       *string
-	CreateDate *time.Time
-	Tags       []*iam.Tag
 }
 
 func (r *IAMPolicy) Remove(_ context.Context) error {
