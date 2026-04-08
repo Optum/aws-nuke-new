@@ -1,6 +1,6 @@
 module github.com/ekristen/aws-nuke/v3
 
-go 1.22
+go 1.24
 
 require (
 	github.com/aws/aws-sdk-go v1.55.6
@@ -22,7 +22,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.15
 	github.com/aws/aws-sdk-go-v2/service/transfer v1.55.5
 	github.com/aws/aws-sdk-go-v2/service/wafregional v1.25.8
-	github.com/aws/smithy-go v1.22.3
+	github.com/aws/smithy-go v1.24.2
 	github.com/ekristen/libnuke v0.24.3
 	github.com/fatih/color v1.18.0
 	github.com/golang/mock v1.6.0
@@ -40,7 +40,7 @@ require (
 )
 
 require (
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.7 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.8 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.29 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.33 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.33 // indirect
